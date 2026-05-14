@@ -16,6 +16,7 @@
  */
 package org.apache.lucene.sandbox.codecs.faiss;
 
+import static org.apache.lucene.index.VectorEncoding.BYTE;
 import static org.apache.lucene.index.VectorEncoding.FLOAT32;
 import static org.apache.lucene.index.VectorSimilarityFunction.DOT_PRODUCT;
 import static org.apache.lucene.index.VectorSimilarityFunction.EUCLIDEAN;
@@ -44,7 +45,7 @@ import org.junit.Ignore;
 public class TestFaissKnnVectorsFormat extends BaseKnnVectorsFormatTestCase {
   private static final String FAISS_RUN_TESTS = "tests.faiss.run";
 
-  private static final VectorEncoding[] SUPPORTED_ENCODINGS = {FLOAT32};
+  private static final VectorEncoding[] SUPPORTED_ENCODINGS = {FLOAT32, BYTE};
   private static final VectorSimilarityFunction[] SUPPORTED_FUNCTIONS = {DOT_PRODUCT, EUCLIDEAN};
 
   @BeforeClass
@@ -91,30 +92,6 @@ public class TestFaissKnnVectorsFormat extends BaseKnnVectorsFormatTestCase {
   @Override
   @Ignore // does not honour visitedLimit
   public void testSearchWithVisitedLimit() {}
-
-  @Override
-  @Ignore // does not support byte vectors
-  public void testByteVectorScorerIteration() {}
-
-  @Override
-  @Ignore // does not support byte vectors
-  public void testMismatchedFields() {}
-
-  @Override
-  @Ignore // does not support byte vectors
-  public void testSortedIndexBytes() {}
-
-  @Override
-  @Ignore // does not support byte vectors
-  public void testRandomBytes() {}
-
-  @Override
-  @Ignore // does not support byte vectors
-  public void testEmptyByteVectorData() {}
-
-  @Override
-  @Ignore // does not support byte vectors
-  public void testMergingWithDifferentByteKnnFields() {}
 
   @Monster("Uses large amount of heap and RAM")
   public void testLargeVectorData() throws IOException {

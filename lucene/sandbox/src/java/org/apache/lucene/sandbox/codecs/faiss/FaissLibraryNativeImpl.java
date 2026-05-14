@@ -36,9 +36,9 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.nio.ByteOrder;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.apache.lucene.index.FloatVectorValues;
 import org.apache.lucene.index.KnnVectorValues;
+import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.search.AcceptDocs;
 import org.apache.lucene.search.KnnCollector;
@@ -151,19 +151,6 @@ final class FaissLibraryNativeImpl implements FaissLibrary {
     return metric;
   }
 
-  // Invert FUNCTION_TO_METRIC
-  private static final Map<Integer, VectorSimilarityFunction> METRIC_TO_FUNCTION =
-      FUNCTION_TO_METRIC.entrySet().stream()
-          .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
-
-  private static VectorSimilarityFunction metricToFunction(int metric) {
-    VectorSimilarityFunction function = METRIC_TO_FUNCTION.get(metric);
-    if (function == null) {
-      throw new UnsupportedOperationException("Metric not supported: " + metric);
-    }
-    return function;
-  }
-
   @Override
   public FaissLibrary.Index createIndex(
       String description,
@@ -229,7 +216,7 @@ final class FaissLibraryNativeImpl implements FaissLibrary {
       // Add docs to index
       handleException(wrapper.faiss_Index_add_with_ids(indexPointer, size, docs, ids));
 
-      return new Index(indexPointer);
+      return new Index(indexPointer, function, VectorEncoding.FLOAT32);
 
     } catch (IOException e) {
       throw new UncheckedIOException(e);
@@ -241,7 +228,8 @@ final class FaissLibraryNativeImpl implements FaissLibrary {
   private static final int FAISS_IO_FLAG_READ_ONLY = 2;
 
   @Override
-  public FaissLibrary.Index readIndex(IndexInput input) {
+  public FaissLibrary.Index readIndex(
+      IndexInput input, VectorSimilarityFunction function, VectorEncoding encoding) {
     try (Arena temp = Arena.ofConfined()) {
       MethodHandle readerHandle = READ_BYTES_HANDLE.bindTo(input);
       MemorySegment readerStub =
@@ -262,7 +250,7 @@ final class FaissLibraryNativeImpl implements FaissLibrary {
               customIOReaderPointer, FAISS_IO_FLAG_MMAP | FAISS_IO_FLAG_READ_ONLY, pointer));
       MemorySegment indexPointer = pointer.get(ADDRESS, 0);
 
-      return new Index(indexPointer);
+      return new Index(indexPointer, function, encoding);
     }
   }
 
@@ -277,29 +265,39 @@ final class FaissLibraryNativeImpl implements FaissLibrary {
     private final FloatToFloatFunction scaler;
     private boolean closed;
 
-    private Index(MemorySegment indexPointer) {
+    private Index(
+        MemorySegment indexPointer, VectorSimilarityFunction function, VectorEncoding encoding) {
       this.arena = Arena.ofShared();
       this.indexPointer =
           indexPointer
               // Ensure timely cleanup
               .reinterpret(arena, wrapper::faiss_Index_free);
 
-      // Get underlying function
-      int metricType = wrapper.faiss_Index_metric_type(indexPointer);
-      VectorSimilarityFunction function = metricToFunction(metricType);
+      int dimension = wrapper.faiss_Index_d(indexPointer);
 
       // Scale Faiss distances to Lucene scores, see VectorSimilarityFunction.java
       this.scaler =
           switch (function) {
-            case DOT_PRODUCT ->
-                // distance in Faiss === dotProduct in Lucene
-                distance -> Math.max((1 + distance) / 2, 0);
+            case DOT_PRODUCT -> {
+              if (encoding == VectorEncoding.BYTE) {
+                float denom = (float) (dimension * (1 << 15));
+                yield distance -> 0.5f + distance / denom;
+              } else {
+                yield distance -> Math.max((1 + distance) / 2, 0);
+              }
+            }
 
             case EUCLIDEAN ->
                 // distance in Faiss === squareDistance in Lucene
                 distance -> 1 / (1 + distance);
 
-            case COSINE, MAXIMUM_INNER_PRODUCT -> throw new AssertionError("Should not reach here");
+            case COSINE ->
+                // For COSINE, vectors are normalized so inner product == cosine similarity
+                distance -> Math.max((1 + distance) / 2, 0);
+
+            case MAXIMUM_INNER_PRODUCT ->
+                throw new UnsupportedOperationException(
+                    "Similarity function not supported: " + function);
           };
 
       this.closed = false;
