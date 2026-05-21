@@ -538,9 +538,12 @@ public class Lucene104ScalarQuantizedVectorsWriter extends FlatVectorsWriter {
       for (int i = 0; i < flatFieldVectorsWriter.getVectors().size(); i++) {
         float[] vector = flatFieldVectorsWriter.getVectors().get(i);
         float magnitude = magnitudes.get(i);
-        for (int j = 0; j < vector.length; j++) {
-          vector[j] /= magnitude;
+        if (magnitude > 0) {
+          for (int j = 0; j < vector.length; j++) {
+            vector[j] /= magnitude;
+          }
         }
+        // Zero vectors (magnitude == 0) are left as-is
       }
     }
 
