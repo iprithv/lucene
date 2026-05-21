@@ -156,6 +156,8 @@ Optimizations
 
 Bug Fixes
 ---------------------
+* GITHUB#15540: Handle zero vectors in COSINE similarity to prevent NaN during HNSW merge. (Prithvi S)
+
 * GITHUB#14049: Randomize KNN codec params in RandomCodec. Fixes scalar quantization div-by-zero
   when all values are identical. (Mike Sokolov)
 
